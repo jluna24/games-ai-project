@@ -147,15 +147,58 @@ export default function SortingVisualizer() {
   const currentStep = stepIndex >= 0 && steps.length > 0 ? steps[stepIndex] : null;
   const displayArray = currentStep ? currentStep.array : array;
   const comparing = currentStep ? currentStep.comparing : null;
+  const isSwap = currentStep?.swap ?? false;
   const sortedIndices = currentStep ? new Set(currentStep.sortedIndices) : new Set<number>();
   const isDone = status === 'done';
 
   const maxVal = Math.max(...displayArray);
 
+  // Mensaje de estado en tiempo real
+  let statusMessage: string | null = null;
+  if (isDone) {
+    statusMessage = null;
+  } else if (comparing && currentStep) {
+    const a = displayArray[comparing[0]];
+    const b = displayArray[comparing[1]];
+    statusMessage = isSwap
+      ? `↕ Swap: ${a} > ${b} — intercambiando posiciones`
+      : `Comparando ${a} y ${b} — sin cambio`;
+  }
+
   return (
-    <div className="flex flex-col gap-6 w-full max-w-2xl mx-auto">
+    <div className="flex flex-col gap-4 w-full max-w-2xl mx-auto">
+      {/* Leyenda */}
+      <div className="flex flex-wrap gap-4 text-xs text-gray-400">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm bg-indigo-500" /> Normal
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm bg-amber-400" /> Comparando
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm bg-rose-500" /> Swap
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm bg-green-500" /> Ordenado
+        </span>
+      </div>
+
+      {/* Mensaje de estado */}
+      <div className="h-6 text-sm font-mono">
+        {statusMessage && (
+          <motion.span
+            key={statusMessage}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className={isSwap ? 'text-rose-400' : 'text-amber-300'}
+          >
+            {statusMessage}
+          </motion.span>
+        )}
+      </div>
+
       {/* Bars */}
-      <div className="relative flex items-end justify-center gap-1 h-48 bg-gray-900 rounded-xl p-4">
+      <div className="relative flex items-end justify-center gap-1 h-52 bg-gray-900 rounded-xl px-4 pt-4 pb-2">
         <AnimatePresence initial={false}>
           {displayArray.map((val: number, i: number) => {
             const isComparing = comparing && (i === comparing[0] || i === comparing[1]);
@@ -163,20 +206,25 @@ export default function SortingVisualizer() {
 
             let barColor = 'bg-indigo-500';
             if (isDone || isSorted) barColor = 'bg-green-500';
+            else if (isComparing && isSwap) barColor = 'bg-rose-500';
             else if (isComparing) barColor = 'bg-amber-400';
 
-            const heightPct = (val / maxVal) * 100;
+            const heightPct = Math.max((val / maxVal) * 85, 8); // mínimo 8% para que el número sea visible
 
             return (
               <motion.div
                 key={`bar-${i}`}
                 layoutId={`bar-${i}`}
-                className={`rounded-t-sm flex-1 min-w-0 ${barColor} transition-colors duration-150`}
+                className={`relative rounded-t-sm flex-1 min-w-0 flex items-start justify-center ${barColor} transition-colors duration-150`}
                 style={{ height: `${heightPct}%` }}
                 initial={{ scaleY: 0, originY: 1 }}
                 animate={{ scaleY: 1 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              />
+              >
+                <span className="text-[9px] font-bold text-white/80 mt-0.5 leading-none select-none">
+                  {val}
+                </span>
+              </motion.div>
             );
           })}
         </AnimatePresence>

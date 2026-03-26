@@ -1,17 +1,26 @@
 // Modelo fijo — no configurable por el usuario
-export const OPENROUTER_MODEL = 'openrouter/free';
+export const OPENROUTER_MODEL = 'openrouter/auto';
 
 // Construye el prompt para que el modelo resuelva búsqueda binaria
 export function buildBinarySearchPrompt(array: number[], target: number): string {
-  return `You are playing binary search on the array: [${array.join(', ')}]
-Target: ${target}
+  const n = array.length;
+  const initialMid = Math.floor((n - 1) / 2);
+  return `You must solve binary search. Output ONLY raw JSON objects, one per line, no markdown, no explanation, no extra text.
 
-Solve binary search step by step. For each step, emit ONLY a JSON object on a single line:
-{"left": <L>, "mid": <M>, "right": <R>, "comparison": "less"|"greater"|"equal", "stepNumber": <N>, "found": true|false}
+Array (0-indexed): [${array.join(', ')}]
+Target value: ${target}
+Initial state: left=0, right=${n - 1}, mid=${initialMid}
 
-Start with left=0, right=${array.length - 1}, mid=Math.floor((left+right)/2).
-Stop when found=true or left > right.
-Do not emit any other text, only the JSON objects.`;
+Rules:
+- Each line must be exactly one JSON object: {"left":<L>,"mid":<M>,"right":<R>,"comparison":"less"|"greater"|"equal","stepNumber":<N>,"found":true|false}
+- "comparison" = "equal" if array[mid]==target, "less" if target < array[mid], "greater" if target > array[mid]
+- If "less": next right = mid-1, next mid = floor((left + mid-1) / 2)
+- If "greater": next left = mid+1, next mid = floor((mid+1 + right) / 2)
+- Set "found":true when array[mid]==target
+- Stop after "found":true or when left > right
+- DO NOT write anything except the JSON lines
+
+Begin:`;
 }
 
 // Llama a OpenRouter con stream: true y retorna el Response con el stream

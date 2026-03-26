@@ -20,6 +20,9 @@ export async function POST(request: Request): Promise<Response> {
 
   const { array, target } = body;
 
+  // Límite de pasos: ceil(log2(n)) + 2 de margen
+  const maxSteps = Math.ceil(Math.log2(array.length)) + 2;
+
   let upstreamResponse: Response;
 
   try {
@@ -56,6 +59,15 @@ export async function POST(request: Request): Promise<Response> {
       const decoder = new TextDecoder();
       let buffer = '';
       let jsonBuffer = '';
+      let stepCount = 0;
+      let closed = false;
+
+      const safeClose = () => {
+        if (!closed) {
+          closed = true;
+          controller.close();
+        }
+      };
 
       try {
         while (true) {
@@ -72,7 +84,7 @@ export async function POST(request: Request): Promise<Response> {
             if (!trimmed) continue;
 
             if (trimmed === 'data: [DONE]') {
-              controller.close();
+              safeClose();
               return;
             }
 
@@ -84,45 +96,79 @@ export async function POST(request: Request): Promise<Response> {
                 if (content) {
                   jsonBuffer += content;
 
-                  // Emit complete JSON lines
-                  const jsonLines = jsonBuffer.split('\n');
-                  jsonBuffer = jsonLines.pop() ?? '';
-
-                  for (const jsonLine of jsonLines) {
-                    const trimmedJson = jsonLine.trim();
-                    if (!trimmedJson) continue;
+                  const jsonRegex = /\{[^{}]*"left"\s*:\s*\d+[^{}]*\}/g;
+                  let match: RegExpExecArray | null;
+                  let lastMatchEnd = 0;
+                  while ((match = jsonRegex.exec(jsonBuffer)) !== null) {
+                    const candidate = match[0];
+                    lastMatchEnd = match.index + match[0].length;
                     try {
-                      JSON.parse(trimmedJson); // validate
-                      controller.enqueue(
-                        new TextEncoder().encode(`data: ${trimmedJson}\n\n`)
-                      );
+                      const parsed = JSON.parse(candidate);
+                      if (
+                        typeof parsed.left === 'number' &&
+                        typeof parsed.mid === 'number' &&
+                        typeof parsed.right === 'number'
+                      ) {
+                        stepCount++;
+                        controller.enqueue(
+                          new TextEncoder().encode(`data: ${candidate}\n\n`)
+                        );
+
+                        if (stepCount >= maxSteps) {
+                          controller.enqueue(
+                            new TextEncoder().encode(`data: {"type":"limit","message":"Max steps reached"}\n\n`)
+                          );
+                          reader.cancel();
+                          safeClose();
+                          return;
+                        }
+
+                        if (parsed.found === true) {
+                          safeClose();
+                          return;
+                        }
+                      }
                     } catch {
-                      // ignore non-JSON lines
+                      // ignore malformed
                     }
+                  }
+                  if (lastMatchEnd > 0) {
+                    jsonBuffer = jsonBuffer.slice(lastMatchEnd);
                   }
                 }
               } catch {
-                // ignore unparseable chunks
+                // ignore unparseable SSE chunks
               }
             }
           }
         }
 
-        // Flush remaining jsonBuffer
+        // Flush remaining buffer
         if (jsonBuffer.trim()) {
-          try {
-            JSON.parse(jsonBuffer.trim());
-            controller.enqueue(
-              new TextEncoder().encode(`data: ${jsonBuffer.trim()}\n\n`)
-            );
-          } catch {
-            // ignore
+          const jsonRegex = /\{[^{}]*"left"\s*:\s*\d+[^{}]*\}/g;
+          let match: RegExpExecArray | null;
+          while ((match = jsonRegex.exec(jsonBuffer)) !== null) {
+            try {
+              const parsed = JSON.parse(match[0]);
+              if (typeof parsed.left === 'number' && typeof parsed.mid === 'number') {
+                stepCount++;
+                controller.enqueue(
+                  new TextEncoder().encode(`data: ${match[0]}\n\n`)
+                );
+                if (stepCount >= maxSteps || parsed.found === true) break;
+              }
+            } catch {
+              // ignore
+            }
           }
         }
       } catch (err) {
-        controller.error(err);
+        if (!closed) {
+          controller.error(err);
+          closed = true;
+        }
       } finally {
-        controller.close();
+        safeClose();
       }
     },
   });

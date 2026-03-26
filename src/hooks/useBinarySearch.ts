@@ -167,6 +167,17 @@ export function useBinarySearch(): UseBinarySearchReturn {
               const parsed = JSON.parse(jsonStr);
               const { left, mid, right, found } = parsed;
 
+              // Evento de límite alcanzado
+              if (parsed.type === 'limit') {
+                foundSignal = true; // evitar el error de "Connection interrupted"
+                setState((s: BinarySearchState) => ({
+                  ...s,
+                  aiStatus: 'error',
+                  errorMessage: 'La IA superó el límite de pasos permitidos',
+                }));
+                break;
+              }
+
               setState((s: BinarySearchState) => ({
                 ...s,
                 aiPointers: { left, mid, right },
